@@ -560,19 +560,34 @@
     background:rgba(201,169,98,.08);
   }
   .edit-bar{
-    position:fixed; left:50%; bottom:100px; transform:translateX(-50%) translateY(20px);
-    z-index:9998; display:flex; gap:10px;
+    position:fixed; left:50%; bottom:90px; transform:translateX(-50%) translateY(20px);
+    z-index:9998; display:flex; flex-wrap:wrap; gap:8px; justify-content:center;
+    max-width:min(420px,94vw);
     opacity:0; pointer-events:none; transition:opacity .25s ease, transform .25s ease;
   }
   body.edit-mode .edit-bar{ opacity:1; pointer-events:auto; transform:translateX(-50%) translateY(0); }
   .edit-bar button{
-    padding:12px 20px; border-radius:12px; border:1px solid var(--line);
-    font-weight:600; font-size:14px; cursor:pointer;
+    padding:11px 14px; border-radius:12px; border:1px solid var(--line);
+    font-weight:600; font-size:13px; cursor:pointer;
     background:var(--bg-1); color:var(--ink-0);
   }
   .edit-bar .save-btn{
     background:linear-gradient(135deg, var(--gold-0), var(--gold-1) 55%, var(--gold-2));
     color:#241b08; border:none; font-weight:700;
+  }
+  .edit-bar .muted{ opacity:.9; font-size:12.5px; }
+  .pin-change-box{ margin-top:14px; display:none; text-align:left; }
+  .pin-change-box.show{ display:block; }
+  .pin-change-box label{ display:block; font-size:11px; color:var(--ink-2); letter-spacing:.08em; text-transform:uppercase; margin:10px 0 6px; }
+  .pin-change-box input{
+    width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--line);
+    background:var(--bg-0); color:var(--ink-0); font-size:16px; letter-spacing:.2em; text-align:center;
+  }
+  .pin-change-box .pin-actions{ display:flex; gap:8px; margin-top:12px; }
+  .pin-change-box .pin-actions button{ flex:1; padding:12px; border-radius:12px; border:1px solid var(--line); background:var(--bg-0); color:var(--ink-0); font-weight:600; cursor:pointer; }
+  .pin-change-box .pin-actions .ok{
+    background:linear-gradient(135deg, var(--gold-0), var(--gold-1) 55%, var(--gold-2));
+    border:none; color:#241b08; font-weight:700;
   }
 
 
@@ -619,13 +634,30 @@
         <button class="pin-key action" data-k="ok">OK</button>
       </div>
       <div class="pin-error" id="pinError">Noto‘g‘ri kod</div>
+      <div class="pin-change-box" id="pinChangeBox">
+        <div class="pin-title" style="font-size:18px;margin-bottom:4px;">Yangi PIN</div>
+        <label>Yangi kod (4 raqam)</label>
+        <input type="password" id="newPinInput" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="••••" autocomplete="off">
+        <label>Qayta kiriting</label>
+        <input type="password" id="newPinConfirm" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="••••" autocomplete="off">
+        <div class="pin-actions">
+          <button type="button" id="cancelPinChange">Bekor</button>
+          <button type="button" class="ok" id="confirmPinChange">Saqlash</button>
+        </div>
+      </div>
     </div>
   </div>
 
   <div class="edit-bar" id="editBar">
+    <button type="button" class="muted" id="changePinBtn">🔑 PIN</button>
+    <button type="button" class="muted" id="changeAvatarBtn">🖼 Rasm</button>
+    <button type="button" class="muted" id="changeMusicBtn">🎵 Musiqa</button>
     <button type="button" class="save-btn" id="saveEditBtn">💾 Saqlash</button>
     <button type="button" id="cancelEditBtn">Yopish</button>
   </div>
+  <input type="file" id="avatarFileInput" accept="image/*" style="display:none">
+  <input type="file" id="musicFileInput" accept="audio/*" style="display:none">
+
 
 
   <div class="music-player" aria-label="Music player">
@@ -820,16 +852,31 @@
 
 <script>
 (function(){
-  const PIN = '3477';
+  const DEFAULT_PIN = '3477';
   const STORAGE_KEY = 'qakhramon_card_data_v1';
+  const PIN_KEY = 'qakhramon_card_pin_v1';
+  const AVATAR_KEY = 'qakhramon_card_avatar_v1';
+  const MUSIC_KEY = 'qakhramon_card_music_v1';
   let pinBuffer = '';
   let isUnlocked = false;
+
+  function getPin(){
+    try {
+      const p = localStorage.getItem(PIN_KEY);
+      if (p && /^\d{4}$/.test(p)) return p;
+    } catch(e) {}
+    return DEFAULT_PIN;
+  }
 
   const lockBtn = document.getElementById('lockBtn');
   const lockIcon = lockBtn.querySelector('.lock-icon');
   const overlay = document.getElementById('pinOverlay');
   const dots = [...document.querySelectorAll('#pinDots .pin-dot')];
   const pinError = document.getElementById('pinError');
+  const pinPad = document.getElementById('pinPad');
+  const pinChangeBox = document.getElementById('pinChangeBox');
+  const pinTitle = overlay.querySelector('.pin-title');
+  const pinSub = overlay.querySelector('.pin-sub');
 
   const elName = document.querySelector('.name');
   const elRole = document.querySelector('.role');
@@ -849,21 +896,31 @@
   const humoNum = document.getElementById('humoNumber');
   const visaHolder = document.querySelector('.paycard.visa .paycard-holder');
   const humoHolder = document.querySelector('.paycard.humo .paycard-holder');
+  const avatarImg = document.getElementById('avatarImg');
+  const music = document.getElementById('bgMusic');
+  const musicSource = music ? music.querySelector('source') : null;
+
+  function toast(msg){ alert(msg); }
 
   function updateDots(){
     dots.forEach((d,i) => d.classList.toggle('filled', i < pinBuffer.length));
   }
-
   function showOverlay(){
     pinBuffer = '';
     updateDots();
     pinError.classList.remove('show');
+    pinChangeBox.classList.remove('show');
+    pinPad.style.display = '';
+    if (pinTitle) pinTitle.textContent = 'Kod kiriting';
+    if (pinSub) pinSub.textContent = 'Tahrirlash uchun';
     overlay.classList.add('show');
   }
   function hideOverlay(){
     overlay.classList.remove('show');
     pinBuffer = '';
     updateDots();
+    pinChangeBox.classList.remove('show');
+    pinPad.style.display = '';
   }
 
   function setUnlocked(val){
@@ -880,10 +937,11 @@
   }
 
   function checkPin(){
-    if (pinBuffer === PIN){
+    if (pinBuffer === getPin()){
       hideOverlay();
       setUnlocked(true);
     } else {
+      pinError.textContent = 'Noto‘g‘ri kod';
       pinError.classList.add('show');
       pinBuffer = '';
       updateDots();
@@ -891,37 +949,116 @@
     }
   }
 
-  document.getElementById('pinPad').addEventListener('click', (e) => {
+  pinPad.addEventListener('click', (e) => {
     const btn = e.target.closest('.pin-key');
     if (!btn) return;
     const k = btn.dataset.k;
-    if (k === 'clear'){
-      pinBuffer = pinBuffer.slice(0, -1);
-      updateDots();
-      return;
-    }
-    if (k === 'ok'){
-      checkPin();
-      return;
-    }
+    if (k === 'clear'){ pinBuffer = pinBuffer.slice(0,-1); updateDots(); return; }
+    if (k === 'ok'){ checkPin(); return; }
     if (pinBuffer.length >= 4) return;
     pinBuffer += k;
     updateDots();
-    if (pinBuffer.length === 4){
-      setTimeout(checkPin, 180);
-    }
+    if (pinBuffer.length === 4) setTimeout(checkPin, 180);
   });
 
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) hideOverlay();
-  });
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) hideOverlay(); });
 
   lockBtn.addEventListener('click', () => {
-    if (isUnlocked){
-      setUnlocked(false);
-    } else {
-      showOverlay();
+    if (isUnlocked) setUnlocked(false);
+    else showOverlay();
+  });
+
+  // PIN change
+  document.getElementById('changePinBtn').addEventListener('click', () => {
+    pinPad.style.display = 'none';
+    pinChangeBox.classList.add('show');
+    pinError.classList.remove('show');
+    if (pinTitle) pinTitle.textContent = 'PIN o‘zgartirish';
+    if (pinSub) pinSub.textContent = 'Faqat 4 ta raqam';
+    document.getElementById('newPinInput').value = '';
+    document.getElementById('newPinConfirm').value = '';
+    overlay.classList.add('show');
+  });
+  document.getElementById('cancelPinChange').addEventListener('click', hideOverlay);
+  document.getElementById('confirmPinChange').addEventListener('click', () => {
+    const a = (document.getElementById('newPinInput').value || '').trim();
+    const b = (document.getElementById('newPinConfirm').value || '').trim();
+    if (!/^\d{4}$/.test(a)) {
+      pinError.textContent = 'PIN 4 ta raqam bo‘lishi kerak';
+      pinError.classList.add('show');
+      return;
     }
+    if (a !== b) {
+      pinError.textContent = 'Kodlar mos kelmadi';
+      pinError.classList.add('show');
+      return;
+    }
+    try { localStorage.setItem(PIN_KEY, a); } catch(e) {}
+    hideOverlay();
+    toast('PIN yangilandi ✓');
+  });
+
+  // Avatar
+  const avatarInput = document.getElementById('avatarFileInput');
+  document.getElementById('changeAvatarBtn').addEventListener('click', () => avatarInput.click());
+  avatarInput.addEventListener('change', () => {
+    const file = avatarInput.files && avatarInput.files[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast('Faqat rasm tanlang'); return; }
+    if (file.size > 4 * 1024 * 1024) { toast('Rasm 4 MB dan kichik bo‘lsin'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const max = 512;
+        let w = img.width, h = img.height;
+        if (w > max || h > max) {
+          if (w > h) { h = Math.round(h * max / w); w = max; }
+          else { w = Math.round(w * max / h); h = max; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        const out = canvas.toDataURL('image/jpeg', 0.85);
+        if (avatarImg) avatarImg.src = out;
+        try { localStorage.setItem(AVATAR_KEY, out); } catch(e) { toast('Saqlash uchun joy yetarli emas'); return; }
+        toast('Rasm yangilandi ✓');
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+    avatarInput.value = '';
+  });
+
+  // Music
+  const musicInput = document.getElementById('musicFileInput');
+  document.getElementById('changeMusicBtn').addEventListener('click', () => musicInput.click());
+  musicInput.addEventListener('change', () => {
+    const file = musicInput.files && musicInput.files[0];
+    if (!file) return;
+    if (!file.type.startsWith('audio/')) { toast('Faqat audio fayl tanlang'); return; }
+    if (file.size > 3 * 1024 * 1024) { toast('Musiqa 3 MB dan kichik bo‘lsin'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      try { localStorage.setItem(MUSIC_KEY, dataUrl); } catch(e) { toast('Saqlash uchun joy yetarli emas'); return; }
+      if (musicSource) {
+        musicSource.src = dataUrl;
+        musicSource.type = file.type || 'audio/mpeg';
+      } else if (music) {
+        music.src = dataUrl;
+      }
+      if (music) { music.load(); music.pause(); }
+      const musicBtn = document.getElementById('musicBtn');
+      if (musicBtn) {
+        musicBtn.classList.remove('playing');
+        const note = musicBtn.querySelector('.note');
+        if (note) note.textContent = '♪';
+      }
+      toast('Musiqa yangilandi ✓');
+    };
+    reader.readAsDataURL(file);
+    musicInput.value = '';
   });
 
   function collectData(){
@@ -977,7 +1114,7 @@
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch(e) {}
     applyData(data);
     setUnlocked(false);
-    alert('Saqlandi ✓');
+    toast('Saqlandi ✓');
   });
 
   document.getElementById('cancelEditBtn').addEventListener('click', () => {
@@ -989,14 +1126,24 @@
   });
 
   document.querySelectorAll('a.row, a.btn').forEach(a => {
-    a.addEventListener('click', (e) => {
-      if (isUnlocked) e.preventDefault();
-    });
+    a.addEventListener('click', (e) => { if (isUnlocked) e.preventDefault(); });
   });
 
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) applyData(JSON.parse(raw));
+  } catch(e) {}
+  try {
+    const av = localStorage.getItem(AVATAR_KEY);
+    if (av && avatarImg) avatarImg.src = av;
+  } catch(e) {}
+  try {
+    const mu = localStorage.getItem(MUSIC_KEY);
+    if (mu && music) {
+      if (musicSource) musicSource.src = mu;
+      else music.src = mu;
+      music.load();
+    }
   } catch(e) {}
 })();
 </script>
