@@ -1146,7 +1146,114 @@
     }
   } catch(e) {}
 })();
-</script>
+</script> 
+  <script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import {
+    getFirestore,
+    doc,
+    setDoc,
+    onSnapshot
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAN7jSdD6l50B6y5i_CkZYTOxneKMHkEPo",
+    authDomain: "salomov-qakhramon.firebaseapp.com",
+    projectId: "salomov-qakhramon",
+    storageBucket: "salomov-qakhramon.firebasestorage.app",
+    messagingSenderId: "563311496037",
+    appId: "1:563311496037:web:84f4692d0bcaee471f2f8c",
+    measurementId: "G-GP3P2L4F09"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const siteRef = doc(db, "siteData", "main");
+
+  function getSiteData() {
+    return {
+      name: document.querySelector('.name')?.textContent.trim() || '',
+      role: document.querySelector('.role')?.textContent.trim() || '',
+      subtitle: document.querySelector('.subtitle')?.textContent.trim() || '',
+      phone: document.querySelector('a.row[href^="tel:"] .row-value')?.textContent.trim() || '',
+      email: document.querySelector('a.row[href^="mailto:"] .row-value')?.textContent.trim() || '',
+      tg: document.querySelector('a.row[href*="t.me"] .row-value')?.textContent.trim() || '',
+      ig: document.querySelector('#igLink .row-value')?.textContent.trim() || '',
+      visa: document.getElementById('visaNumber')?.textContent.trim() || '',
+      humo: document.getElementById('humoNumber')?.textContent.trim() || '',
+      visaHolder: document.querySelector('.paycard.visa .paycard-holder')?.textContent.trim() || '',
+      humoHolder: document.querySelector('.paycard.humo .paycard-holder')?.textContent.trim() || ''
+    };
+  }
+
+  function applyFirebaseData(d) {
+    if (!d) return;
+
+    const setText = (selector, value) => {
+      const el = document.querySelector(selector);
+      if (el && value != null) el.textContent = value;
+    };
+
+    setText('.name', d.name);
+    setText('.role', d.role);
+    setText('.subtitle', d.subtitle);
+    setText('a.row[href^="tel:"] .row-value', d.phone);
+    setText('a.row[href^="mailto:"] .row-value', d.email);
+    setText('a.row[href*="t.me"] .row-value', d.tg);
+    setText('#igLink .row-value', d.ig);
+    setText('#visaNumber', d.visa);
+    setText('#humoNumber', d.humo);
+    setText('.paycard.visa .paycard-holder', d.visaHolder);
+    setText('.paycard.humo .paycard-holder', d.humoHolder);
+
+    const phone = (d.phone || '').replace(/[^\d+]/g, '');
+    const phoneLink = document.querySelector('a.row[href^="tel:"]');
+    const contactBtn = document.querySelector('a.btn.primary[href^="tel:"]');
+    const emailLink = document.querySelector('a.row[href^="mailto:"]');
+    const emailBtn = document.querySelector('a.btn[href^="mailto:"]');
+    const tgLink = document.querySelector('a.row[href*="t.me"]');
+    const igLink = document.getElementById('igLink');
+
+    if (phoneLink) phoneLink.href = 'tel:' + phone;
+    if (contactBtn) contactBtn.href = 'tel:' + phone;
+    if (emailLink) emailLink.href = 'mailto:' + (d.email || '');
+    if (emailBtn) emailBtn.href = 'mailto:' + (d.email || '');
+
+    if (tgLink) {
+      tgLink.href = 'https://t.me/' + (d.tg || '').replace(/^@/, '');
+    }
+
+    if (igLink) {
+      igLink.href = 'https://www.instagram.com/' + (d.ig || '').replace(/^@/, '');
+    }
+
+    const footer = document.querySelector('.footer');
+    if (footer && d.name) {
+      footer.innerHTML = d.name + ' <span>·</span> Digital Card';
+    }
+  }
+
+  // Firebase'dan ma'lumotni real vaqtda olish
+  onSnapshot(siteRef, (snapshot) => {
+    if (snapshot.exists()) {
+      applyFirebaseData(snapshot.data());
+    }
+  });
+
+  // "Saqlash" bosilganda Firebase'ga yozish
+  document.getElementById('saveEditBtn')?.addEventListener('click', async () => {
+    try {
+      const data = getSiteData();
+
+      await setDoc(siteRef, data, { merge: true });
+
+      console.log("Firebase: ma'lumot saqlandi");
+    } catch (error) {
+      console.error("Firebase xatosi:", error);
+      alert("Firebase saqlashda xato: " + error.message);
+    }
+  });
+  </script>
 
 </body>
 </html>
